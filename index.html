@@ -30,6 +30,15 @@
             overflow-x: hidden;
             -webkit-tap-highlight-color: transparent;
         }
+        
+        /* Mobile optimization for high-DPI devices like S23 Ultra */
+        @media (min-width: 768px) {
+            .mobile-container {
+                max-width: 28rem; /* max-w-md */
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
 
         .font-ops { font-family: 'Black Ops One', cursive; }
         .font-condensed { font-family: 'Roboto Condensed', sans-serif; }
@@ -596,7 +605,7 @@
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
                 exit={{ opacity: 0 }}
-                className="min-h-screen bg-zinc-950 font-condensed relative overflow-y-auto"
+                className="min-h-[100dvh] bg-zinc-950 font-condensed relative overflow-y-auto"
             >
                 <GlobalEffects />
                 <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
@@ -819,12 +828,14 @@
             <motion.div 
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
-                className="min-h-screen bg-zinc-950 font-condensed relative overflow-hidden"
+                className="min-h-[100dvh] bg-zinc-950 font-condensed relative overflow-hidden"
                 style={{
                     backgroundImage: 'url(base-camp-bg.png)',
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat'
+                    backgroundRepeat: 'no-repeat',
+                    objectFit: 'cover',
+                    minHeight: '100dvh'
                 }}
             >
                 {/* Glow overlay - above scanlines */}
@@ -835,6 +846,7 @@
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         backgroundRepeat: 'no-repeat',
+                        objectFit: 'cover',
                         mixBlendMode: 'plus-lighter',
                         animation: 'flicker 2s ease-in-out infinite'
                     }}
@@ -853,15 +865,15 @@
                         <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-[0.85] font-ops">OPERATIE:<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">BUITEN DE LIJNTJES</span></h1>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={onViewControlPanel} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                        <button onClick={onViewControlPanel} className="bg-zinc-800 border-2 border-zinc-700 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center justify-center" style={{ minHeight: '48px', minWidth: '48px', padding: '0.5rem' }}>
                            <Icon name="User" size={24} className="text-yellow-400 mb-1" />
                            <span className="font-black text-white text-[10px] uppercase">WIE BEN IK?</span>
                         </button>
-                        <button onClick={onViewLogbook} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                        <button onClick={onViewLogbook} className="bg-zinc-800 border-2 border-zinc-700 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center justify-center" style={{ minHeight: '48px', minWidth: '48px', padding: '0.5rem' }}>
                            <Icon name="FolderOpen" size={24} className="text-yellow-400 mb-1" />
                            <span className="font-black text-white text-[10px] uppercase">MIJN FOTO-BOEK</span>
                         </button>
-                        <button onClick={onViewPerks} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                        <button onClick={onViewPerks} className="bg-zinc-800 border-2 border-zinc-700 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center justify-center" style={{ minHeight: '48px', minWidth: '48px', padding: '0.5rem' }}>
                            <Icon name="Award" size={24} className="text-yellow-400 mb-1" />
                            <span className="font-black text-white text-[10px] uppercase">STICKERS</span>
                         </button>
@@ -879,7 +891,7 @@
                         whileTap={{ scale: 0.95 }}
                         className="w-full relative group text-left"
                     >
-                        <div className="bg-blue-900 h-28 w-full border-l-8 border-blue-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg">
+                        <div className="bg-blue-900 w-full border-l-8 border-blue-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg" style={{ minHeight: '48px', height: '7rem' }}>
                             <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
                             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
                             <div className="z-10 flex-1 relative">
@@ -905,7 +917,7 @@
                         whileTap={{ scale: 0.95 }}
                         className="w-full relative group text-left"
                     >
-                        <div className="bg-emerald-900 h-28 w-full border-l-8 border-emerald-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg">
+                        <div className="bg-emerald-900 w-full border-l-8 border-emerald-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg" style={{ minHeight: '48px', height: '7rem' }}>
                             <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
                             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
                             <div className="z-10 flex-1 relative">
@@ -932,7 +944,7 @@
       const gradientColors = operationMode === 'indoor' ? 'from-blue-400 to-purple-500' : 'from-yellow-400 to-orange-500';
       
       return (
-        <motion.div className="min-h-screen bg-zinc-950 font-condensed select-none overflow-hidden relative pt-24" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+        <motion.div className="min-h-[100dvh] bg-zinc-950 font-condensed select-none overflow-hidden relative pt-24" style={{ height: '100dvh', overflowY: 'auto' }} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
           <GlobalEffects />
           <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
           
@@ -964,10 +976,10 @@
             {zones.map((zone, index) => {
               const isLocked = levelInfo.level < zone.minLevel;
               return (
-              <motion.button key={zone.id} onClick={() => !isLocked && onSelectZone(zone)} initial={{ x: index % 2 === 0 ? -100 : 100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: index * 0.1, type: "spring", stiffness: 120, damping: 12 }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} className={`w-full relative group text-left ${isLocked ? 'grayscale opacity-75' : ''}`} disabled={isLocked}>
+              <motion.button key={zone.id} onClick={() => !isLocked && onSelectZone(zone)} initial={{ x: index % 2 === 0 ? -100 : 100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: index * 0.1, type: "spring", stiffness: 120, damping: 12 }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} className={`w-full relative group text-left ${isLocked ? 'grayscale opacity-75' : ''}`} disabled={isLocked} style={{ minHeight: '48px' }}>
                 <div className={`
-                  ${zone.color} h-28 w-full border-l-8 ${isLocked ? 'border-zinc-600' : zone.border} relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg
-                `}>
+                  ${zone.color} w-full border-l-8 ${isLocked ? 'border-zinc-600' : zone.border} relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg
+                `} style={{ minHeight: '48px', height: '7rem' }}>
                     {isLocked && <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center gap-2"><Icon name="Lock" className="text-zinc-400" size={32} /><span className="font-ops text-zinc-400 text-xl tracking-widest">LVL {zone.minLevel}</span></div>}
                     <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
                     <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
@@ -986,13 +998,13 @@
           <SpecialCrate level={levelInfo.level} onOpen={() => alert("SECRET UNLOCKED: NIGHT VISION BUILDER (Coming Soon in Update 2.0)")} />
           <div className="fixed bottom-4 left-4 text-zinc-800 font-black text-8xl opacity-30 rotate-[-10deg] pointer-events-none select-none font-ops">GO!</div>
           
-          {/* Fixed Back to Basecamp Button */}
+          {/* Fixed Back to Basecamp Button - Optimized for S23 Ultra */}
           <motion.button
             onClick={onViewModeSelect}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             whileTap={{ scale: 0.98 }}
-            className="fixed bottom-0 left-0 right-0 w-full group z-[9999]"
+            className="fixed bottom-0 left-0 right-0 w-full group z-[9999] backdrop-blur-sm"
           >
             {/* De achtergrond die écht tot de bodem loopt */}
             <div className="absolute inset-0 bg-yellow-400"></div>
@@ -1000,7 +1012,10 @@
             {/* De visuele content met Safe Area padding voor mobiel */}
             <div 
               className="relative bg-yellow-400 hover:bg-yellow-300 border-t-4 border-black px-6 pt-6 flex items-center justify-center gap-4 active:bg-yellow-500 transition-colors"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+              style={{ 
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+                minHeight: '48px'
+              }}
             >
               <Icon name="Home" size={32} className="text-black" />
               <div className="text-left">
@@ -1028,7 +1043,7 @@
       const zoneDisplayName = getZoneDisplayName(zone.title);
       
       return (
-        <motion.div className={`min-h-screen bg-zinc-950 relative overflow-x-hidden font-condensed`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+        <motion.div className={`min-h-[100dvh] bg-zinc-950 relative overflow-x-hidden font-condensed`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
           <GlobalEffects />
           <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
           <div className={`absolute inset-0 ${zone.color} opacity-20 pointer-events-none`}></div>
@@ -1283,7 +1298,7 @@
         console.log('MobileApp render - view:', view, 'initialView:', initialView);
         
         return (
-            <div className="min-h-screen relative bg-zinc-950">
+            <div className="min-h-[100dvh] relative bg-zinc-950">
                 <AnimatePresence>
                     {showBlast && (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center overflow-hidden">
@@ -1423,7 +1438,7 @@
 
         // Desktop View Placeholder (Using same styling as before but simplified for this snippet)
         if (!isMobile) return (
-             <div className="min-h-screen bg-zinc-950 text-white font-condensed flex items-center justify-center p-8">
+             <div className="min-h-[100dvh] bg-zinc-950 text-white font-condensed flex items-center justify-center p-8">
                 <div className="text-center">
                     <h1 className="text-4xl font-ops mb-4">FIELD DEVICE REQUIRED</h1>
                     <p className="text-zinc-500">Open deze link op je mobiel.</p>
