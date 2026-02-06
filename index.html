@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Buiten de Lijntjes - Mission Control</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Framer Motion -->
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Roboto+Condensed:ital,wght@0,400;0,700;1,700&display=swap');
+
+        body {
+            background-color: #09090b; /* zinc-950 */
+            color: #fff;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .font-ops { font-family: 'Black Ops One', cursive; }
+        .font-condensed { font-family: 'Roboto Condensed', sans-serif; }
+        .clip-brutal { clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .scanline {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+            background-size: 100% 4px; pointer-events: none; z-index: 5; opacity: 0.15;
+        }
+        
+        @keyframes flicker {
+            0%, 100% { opacity: 0.6; }
+            10% { opacity: 1; }
+            20% { opacity: 0.5; }
+            30% { opacity: 0.9; }
+            40% { opacity: 0.7; }
+            50% { opacity: 1; }
+            60% { opacity: 0.4; }
+            70% { opacity: 0.95; }
+            80% { opacity: 0.65; }
+            90% { opacity: 1; }
+        }
+        
+        video { object-fit: cover; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<!-- Background Music -->
+<audio id="bgMusic" loop preload="auto">
+    <source src="audio/buitendelijntjes_score.mp3" type="audio/mpeg">
+</audio>
+
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const { motion, AnimatePresence } = window.Motion;
+
+    // --- CONFIGURATION ---
+    const LEVELS = {
+        1: { name: 'BEGINNER', minXP: 0 },
+        2: { name: 'SPEURDER', minXP: 300 },
+        3: { name: 'COMMANDO', minXP: 800 },
+        4: { name: 'SUPER-AGENT', minXP: 1600 }
+    };
+
+    const PERKS = [
+        { 
+            id: 'first_blood', 
+            icon: 'Zap', 
+            title: 'EERSTE STICKER', 
+            desc: 'Eerste missie voltooid', 
+            condition: (stats) => stats.completed.length >= 1 
+        },
+        { 
+            id: 'night_owl', 
+            icon: 'Moon', 
+            title: 'NACHT-KIJKER', 
+            desc: 'Nachtmissie voltooid', 
+            condition: (stats) => stats.completed.includes('licht-signalen') 
+        },
+        { 
+            id: 'builder', 
+            icon: 'Hammer', 
+            title: 'MEESTER-BOUWER', 
+            desc: 'Bouwmissie voltooid', 
+            condition: (stats) => stats.completed.includes('fort-bouwen') || stats.completed.includes('kussen-fort') 
+        },
+        { 
+            id: 'veteran', 
+            icon: 'Award', 
+            title: 'ECHTE PRO', 
+            desc: '5 Missies voltooid', 
+            condition: (stats) => stats.completed.length >= 5 
+        },
+        { 
+            id: 'master', 
+            icon: 'Crown', 
+            title: 'KONING AGENT', 
+            desc: 'Level 4 bereikt', 
+            condition: (stats) => stats.xp >= 1600 
+        },
+    ];
+
+    const NICKNAME_PARTS = {
+        adj: [
+            "Turbo", "Mega", "Schaduw", "Cyber", "IJzeren", 
+            "Wilde", "Neon", "Gevaarlijke", "Stille", "Ultra"
+        ],
+        noun: [
+            "Tijger", "Havik", "Wolf", "Beer", "Ninja", 
+            "Ranger", "Spion", "Bouwer", "Piloot", "Legende"
+        ]
+    };
+
+    const getLevelInfo = (xp) => {
+        let currentLevel = 1;
+        let nextLevelXP = LEVELS[2].minXP;
+        
+        if (xp >= LEVELS[4].minXP) { currentLevel = 4; nextLevelXP = LEVELS[4].minXP * 1.5; }
+        else if (xp >= LEVELS[3].minXP) { currentLevel = 3; nextLevelXP = LEVELS[4].minXP; }
+        else if (xp >= LEVELS[2].minXP) { currentLevel = 2; nextLevelXP = LEVELS[3].minXP; }
+
+        const prevLevelXP = LEVELS[currentLevel].minXP;
+        const progress = Math.min(100, Math.max(0, ((xp - prevLevelXP) / (nextLevelXP - prevLevelXP)) * 100));
+
+        return { level: currentLevel, title: LEVELS[currentLevel].name, progress, nextXP: nextLevelXP, currentXP: xp };
+    };
+
+    // --- UTILS ---
+    const Icon = ({ name, size = 24, className, ...props }) => {
+        const iconName = name.charAt(0).toUpperCase() + name.slice(1);
+        const lucideIcon = lucide.icons[iconName];
+        if (!lucideIcon) return null;
+        return (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+                {lucideIcon.map(([tag, attrs], i) => { const Tag = tag; return <Tag key={i} {...attrs} />; })}
+            </svg>
+        );
+    };
+
+    // --- GAME DATA ---
+    const ZONES = [
+      {
+        id: 'bos',
+        title: 'HET GROTE BOS',
+        subtitle: 'DE WILDE JUNGLE',
+        minLevel: 1,
+        color: 'bg-emerald-900',
+        accent: 'text-emerald-400',
+        border: 'border-emerald-500',
+        iconName: 'Trees',
+        description: "PAS OP! Hier gelden de wetten van de natuur. Bouw je base en overleef!",
+        adventures: [
+          {
+            id: 'fort-bouwen',
+            title: 'BOUW EEN GEHEIME HUT',
+            intro: "CODE ROOD! JE MOET ONZICHTBAAR WORDEN!",
+            difficulty: 'HARD',
+            xp: 300,
+            supplies: ['3 Grote takken', 'Camouflage (bladeren!)', 'Touw (of lianen)'],
+            steps: ["Zoek een stevige boom. Dit is je ruggengraat.", "Zet takken ertegenaan. Maak het STEVIG.", "Camoufleer alles. Als ik je zie, ben je af.", "Test het: Is het waterdicht? Giet er water op!"]
+          },
+          {
+            id: 'speurneus',
+            title: 'DIERENSPOREN ZOEKEN',
+            intro: "HOLY MOLY! Er sluipt hier iets rond... Zoek het beest!",
+            difficulty: 'MEDIUM',
+            xp: 200,
+            supplies: ['Vergrootglas', 'Smartphone', 'Stalen zenuwen'],
+            steps: ["Check de modder. Zie je afdrukken?", "Zoek naar poep (ja, echt!). Van wie is dat?", "Vind een veer of pluk haar.", "Maak een foto van je bewijsmateriaal."]
+          },
+          {
+            id: 'stok-kunst',
+            title: 'MAAK EEN TOVERSTOK',
+            intro: "Je hebt verdediging nodig. Zoek de perfecte stok.",
+            difficulty: 'EASY',
+            xp: 100,
+            supplies: ['Zakmes (VRAAG HULP!)', 'Paracord', 'Hout'],
+            steps: ["Zoek een stok die niet breekt. Test hem!", "Snijd voorzichtig de bast eraf.", "Versier het handvat met touw.", "Geef je staff een legendarische naam."]
+          }
+        ]
+      },
+      {
+        id: 'tuin',
+        title: 'DE TUIN-JUNGLE',
+        subtitle: 'KLEINE BEESTJES',
+        minLevel: 1,
+        color: 'bg-lime-900',
+        accent: 'text-lime-400',
+        border: 'border-lime-500',
+        iconName: 'Bug',
+        description: "Je denkt dat het veilig is? FOUT! Er kruipen duizenden monsters onder het gras.",
+        adventures: [
+          {
+            id: 'modder-chef',
+            title: 'MODDER-SOEP MAKEN',
+            intro: "GATVERDAMME! We maken het vieste brouwsel ooit.",
+            difficulty: 'MESSY',
+            xp: 150,
+            supplies: ['Emmer', 'Aarde', 'Water', 'Oude pollepel'],
+            steps: ["Graaf een gat. Dieper!", "Meng aarde en water tot pure sludge.", "Voeg 'ingrediënten' toe: wormen, stenen, blaadjes.", "Serveer het aan de natuur (NIET OPETEN!)."]
+          },
+          {
+            id: 'slakken-race',
+            title: 'SLAKKEN-RACE',
+            intro: "NIET NORMAAL! Formule 1, maar dan slijmerig.",
+            difficulty: 'FUN',
+            xp: 150,
+            supplies: ['2 Slakken', 'Stoepkrijt', 'Sla (brandstof)'],
+            steps: ["Teken een circuit op de tegels.", "Zet de racers aan de start.", "GEEN HANDEN! Ze moeten het zelf doen.", "Wie finisht er als eerste bij de sla?"]
+          }
+        ]
+      },
+      {
+        id: 'nacht',
+        title: 'NACHT-MISSIE',
+        subtitle: 'GEHEIM // LEVEL 2 NODIG',
+        minLevel: 2,
+        color: 'bg-indigo-950',
+        accent: 'text-indigo-400',
+        border: 'border-indigo-500',
+        iconName: 'Moon',
+        description: "Als de zon zakt, worden de echte helden wakker. Zaklamp aan!",
+        adventures: [
+          {
+            id: 'licht-signalen',
+            title: 'GEHEIME LICHTJES',
+            intro: "SSST! De vijand luistert mee. Gebruik lichtsignalen!",
+            difficulty: 'STEALTH',
+            xp: 250,
+            supplies: ['Zaklamp', 'Donker steegje/tuin', 'Partner'],
+            steps: ["Spreek een code af: 1x flits = GEVAAR.", "Verstop je in het donker.", "Sein naar je teamgenoot.", "Zien ze je? Rennen maar!"]
+          }
+        ]
+      },
+      {
+        id: 'makers',
+        title: 'MAAK IETS VAN ROMMEL',
+        subtitle: 'BOUWEN & SLOPEN',
+        minLevel: 2,
+        color: 'bg-orange-900',
+        accent: 'text-orange-500',
+        border: 'border-orange-500',
+        iconName: 'Hammer',
+        description: "Afval bestaat niet. Alleen onderdelen voor je volgende uitvinding.",
+        adventures: [
+          {
+            id: 'robot-masker',
+            title: 'MAAK EEN ROBOT-PAK',
+            intro: "KLABAM! Upgrade jezelf. Word 50% mens, 50% machine.",
+            difficulty: 'CREATIVE',
+            xp: 200,
+            supplies: ['Karton', 'Duct tape', 'Zilverfolie', 'Doppen'],
+            steps: ["Sloop een oude doos voor de basis.", "Tape alles vast. Meer tape is altijd beter.", "Gebruik zilverfolie voor de metalen look.", "Installeer je nieuwe gezicht. SYSTEM ONLINE."]
+          }
+        ]
+      }
+    ];
+
+    const INDOOR_ZONES = [
+      {
+        id: 'base_alpha',
+        title: 'HET WOONKAMER-KAMP',
+        subtitle: 'ALLES VEILIG MAKEN',
+        minLevel: 1,
+        color: 'bg-blue-900',
+        accent: 'text-blue-400',
+        border: 'border-blue-500',
+        iconName: 'Sofa',
+        description: "Het is buiten te gevaarlijk. We opereren vanuit HQ. Bouw de verdediging op.",
+        adventures: [
+          {
+            id: 'kussen-fort',
+            title: 'HET KUSSEN-KASTEEL',
+            intro: "WE WORDEN AANGEVALLEN! Bouw de ultieme bunker.",
+            difficulty: 'HARD',
+            xp: 300,
+            supplies: ['Alle kussens', 'Dekens', 'Wasknijpers', 'Stoelen'],
+            steps: [
+                "Zet stoelen in een cirkel met de ruggen naar binnen.", 
+                "Gooi dekens eroverheen. Gebruik wasknijpers!", 
+                "Maak een geheime ingang.", 
+                "Richt het in met zaklampen en proviand (koekjes)."
+            ]
+          },
+          {
+            id: 'vloer-lava',
+            title: 'PAS OP: DE VLOER IS LAVA!',
+            intro: "CODE ROOD! De vloer is gesmolten magma. Raak het aan en je bent TOAST.",
+            difficulty: 'ACTIVE',
+            xp: 150,
+            supplies: ['Kussens', 'Boeken', 'Stoelen', 'Papier'],
+            steps: [
+                "Leg een parcours door de kamer.", 
+                "Je mag de vloer NIET raken.", 
+                "Als je valt: 10 keer opdrukken en opnieuw beginnen.", 
+                "Haal de overkant zonder te verbranden!"
+            ]
+          }
+        ]
+      },
+      {
+        id: 'labo',
+        title: 'HET KEUKEN-LAB',
+        subtitle: 'GEKKE PROEFJES',
+        minLevel: 1,
+        color: 'bg-purple-900',
+        accent: 'text-purple-400',
+        border: 'border-purple-500',
+        iconName: 'FlaskConical',
+        description: "Hier maken we onze geheime formules. Pas op voor explosies (grapje, mama).",
+        adventures: [
+          {
+            id: 'geheim-schrift',
+            title: 'GEHEIME BRIEF SCHRIJVEN',
+            intro: "Verstuur geheime berichten die de vijand niet kan lezen.",
+            difficulty: 'MEDIUM',
+            xp: 200,
+            supplies: ['Citroensap', 'Wattenstaafje', 'Wit papier', 'Strijkbout (VRAAG HULP!)'],
+            steps: [
+                "Doop het staafje in citroensap.", 
+                "Schrijf je bericht op papier.", 
+                "Laat het drogen. Het is nu onzichtbaar!", 
+                "Maak het warm (strijkbout/lamp) om te lezen."
+            ]
+          },
+          {
+            id: 'monster-sandwich',
+            title: 'MAAK EEN GEK BROODJE',
+            intro: "Bouw een mutant. Hij moet eetbaar zijn, maar er eng uitzien.",
+            difficulty: 'TASTY',
+            xp: 100,
+            supplies: ['Brood', 'Beleg', 'Komkommer', 'Augurk'],
+            steps: [
+                "Snijd brood in gekke vormen.", 
+                "Gebruik komkommer als ogen en augurk als tong.", 
+                "Maak tanden van kaas.", 
+                "Eet het monster op voordat hij jou opeet!"
+            ]
+          }
+        ]
+      },
+      {
+        id: 'gang',
+        title: 'DE DONKERE GANG',
+        subtitle: 'PAS OP VOOR DE STRALEN',
+        minLevel: 2,
+        color: 'bg-red-900',
+        accent: 'text-red-400',
+        border: 'border-red-500',
+        iconName: 'ShieldAlert',
+        description: "De gang zit vol lasers. Kun jij er doorheen zonder het alarm te laten afgaan?",
+        adventures: [
+          {
+            id: 'laser-doolhof',
+            title: 'KRUIP DOOR HET WEB',
+            intro: "Mission Impossible stijl. Raak de draden niet aan!",
+            difficulty: 'EXTREME',
+            xp: 400,
+            supplies: ['Wol of touw', 'Plakband', 'Een smalle gang'],
+            steps: [
+                "Span draden kris-kras door de gang.", 
+                "Plak ze vast aan de muren (hoog en laag).", 
+                "Probeer er doorheen te kruipen zonder touw te raken.", 
+                "Raak je draad? ALARM! Terug naar start."
+            ]
+          }
+        ]
+      },
+      {
+        id: 'luchtruim',
+        title: 'HET LUCHTRUIM',
+        subtitle: 'ZWEVEN & VLIEGEN',
+        minLevel: 3,
+        color: 'bg-sky-900',
+        accent: 'text-sky-400',
+        border: 'border-sky-500',
+        iconName: 'Plane',
+        description: "De zwaartekracht is je vijand. Wij kiezen het luchtruim. Tijd om te vliegen.",
+        adventures: [
+          {
+            id: 'parachute-drop',
+            title: 'PARACHUTE LATEN VALLEN',
+            intro: "Je teamgenoot (de knuffel) moet veilig landen achter de vijandelijke linies.",
+            difficulty: 'PHYSICS',
+            xp: 350,
+            supplies: ['Vuilniszak of zakdoek', 'Touwtjes', 'Actiefiguur/Knuffel', 'Schaar'],
+            steps: [
+                "Knip een groot rondje uit de zak.", 
+                "Knoop 4 touwtjes aan de randen.", 
+                "Bind de touwtjes vast aan je held.", 
+                "Laat hem vallen van de trap. LANDT HIJ ZACHT?"
+            ]
+          },
+          {
+            id: 'stealth-glider',
+            title: 'PAPIEREN VLIEGTUIG TEST',
+            intro: "Vouw een vliegtuig dat geruisloos een doelwit kan raken.",
+            difficulty: 'PRECISION',
+            xp: 250,
+            supplies: ['A4 Papier', 'Plakband', 'Doelwit (emmer)'],
+            steps: [
+                "Vouw je beste vliegtuig.", 
+                "Verstevig de neus met een beetje plakband.", 
+                "Zet de emmer onderaan de trap.", 
+                "Gooi hem erin. MIS? Opnieuw vouwen!"
+            ]
+          }
+        ]
+      }
+    ];
+
+    // --- BACKGROUND EFFECTS ---
+    const GlobalEffects = () => (
+        <>
+            <div className="scanline"></div>
+            <div className="scan-bar"></div>
+            <motion.div 
+                animate={{ backgroundPosition: ["0px 0px", "-40px -40px"] }}
+                transition={{ repeat: Infinity, duration: 6, ease: "linear" }}
+                className="fixed inset-0 opacity-10 pointer-events-none z-0"
+                style={{ backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)', backgroundSize: '40px 40px' }}
+            />
+        </>
+    );
+
+    // --- COMPONENTS ---
+
+    // Control Panel / Identity Screen
+    const ControlPanel = ({ codename, onUpdateCodename, onBack, currentXP, earnedPerks, onResetProgress }) => {
+        const [tempCodename, setTempCodename] = useState(codename || '');
+        const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+        const playClickSound = () => {
+            // Create a simple click sound using Web Audio API
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (e) {
+                // Silently fail if audio context is not available
+            }
+        };
+
+        const generateName = () => {
+            // Kies willekeurige index voor Adjectief
+            const randomAdjIndex = Math.floor(Math.random() * NICKNAME_PARTS.adj.length);
+            const adj = NICKNAME_PARTS.adj[randomAdjIndex];
+
+            // Kies willekeurige index voor Noun
+            const randomNounIndex = Math.floor(Math.random() * NICKNAME_PARTS.noun.length);
+            const noun = NICKNAME_PARTS.noun[randomNounIndex];
+
+            // Update de state (profiel)
+            const newCodename = `${adj} ${noun}`;
+            setTempCodename(newCodename);
+            onUpdateCodename(newCodename);
+            playClickSound();
+        };
+        
+        useEffect(() => {
+            if (!codename) {
+                generateName();
+            } else {
+                setTempCodename(codename);
+            }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []);
+
+        return (
+            <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                className="min-h-screen bg-zinc-950 font-condensed pt-20 pb-24"
+            >
+                <GlobalEffects />
+                <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
+                
+                <div className="relative z-10 px-4">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-8 pt-4">
+                        <button 
+                            onClick={onBack} 
+                            className="flex items-center gap-2 text-white font-bold uppercase tracking-wider hover:text-yellow-400 transition-colors p-2 bg-black/20 rounded"
+                        >
+                            <Icon name="ArrowLeft" size={24} /> BACK
+                        </button>
+                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter font-ops">IDENTITY</h2>
+                    </div>
+
+                    {/* Codename Generator */}
+                    <div className="w-full max-w-sm mb-12">
+                        <label className="text-xs text-zinc-500 uppercase font-bold mb-2 block">Codenaam</label>
+                        <div className="flex gap-2">
+                            <div className="flex-1 bg-zinc-900 border border-zinc-700 p-3 text-xl font-ops text-yellow-500 text-center uppercase tracking-wider">
+                                {tempCodename || 'GENERATING...'}
+                            </div>
+                            <button 
+                                onClick={generateName} 
+                                className="bg-zinc-800 border border-zinc-700 p-3 text-white hover:bg-zinc-700 active:scale-95 transition-all"
+                            >
+                                <Icon name="RefreshCw" size={24} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Reset Progress Button */}
+                    <div className="w-full max-w-sm">
+                        <label className="text-xs text-zinc-500 uppercase font-bold mb-2 block">Progressie</label>
+                        <button 
+                            onClick={() => setShowResetConfirm(true)}
+                            className="w-full bg-red-900 border-2 border-red-600 hover:bg-red-800 active:scale-95 transition-all p-4 flex items-center justify-center gap-3 text-white font-bold uppercase tracking-wider"
+                        >
+                            <Icon name="Trash2" size={24} />
+                            <span>Reset Alle Progressie</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Reset Confirmation Modal */}
+                {showResetConfirm && (
+                    <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4" onClick={() => setShowResetConfirm(false)}>
+                        <motion.div 
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-zinc-900 border-4 border-red-600 p-6 max-w-sm w-full"
+                        >
+                            <h3 className="text-2xl font-black text-white uppercase mb-4 font-ops">WAARSCHUWING</h3>
+                            <p className="text-zinc-300 mb-6 font-bold uppercase text-sm">
+                                Weet je zeker dat je alle progressie wilt resetten? Dit kan niet ongedaan worden gemaakt.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowResetConfirm(false)}
+                                    className="flex-1 bg-zinc-800 border-2 border-zinc-700 text-white font-bold uppercase py-3 hover:bg-zinc-700 transition-colors"
+                                >
+                                    ANNULEREN
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onResetProgress();
+                                        setShowResetConfirm(false);
+                                    }}
+                                    className="flex-1 bg-red-600 border-2 border-red-500 text-white font-bold uppercase py-3 hover:bg-red-700 transition-colors"
+                                >
+                                    RESET
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </motion.div>
+        );
+    };
+
+    // Perks Overview Page
+    const PerksView = ({ earnedPerks, currentXP, completedAdventures, onBack }) => {
+        const stats = { completed: completedAdventures || [], xp: currentXP };
+        return (
+            <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }}
+                className="min-h-screen bg-zinc-950 font-condensed relative overflow-y-auto"
+            >
+                <GlobalEffects />
+                <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
+                
+                <div className="pt-24 px-4 pb-24">
+                    <div className="mb-8">
+                        <button 
+                            onClick={onBack}
+                            className="flex items-center gap-2 text-white font-bold uppercase tracking-wider hover:text-yellow-400 transition-colors p-2 bg-black/20 rounded mb-4"
+                        >
+                            <Icon name="ArrowLeft" size={24} /> TERUG
+                        </button>
+                        <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-[0.85] font-ops mb-2">
+                            MIJN<span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500"> STICKERS</span>
+                        </h1>
+                        <p className="text-zinc-400 text-sm uppercase tracking-widest">Alle behaalde prestaties</p>
+                    </div>
+
+                    <div className="grid gap-6">
+                        {PERKS.map((perk, index) => {
+                            const isEarned = earnedPerks.includes(perk.id);
+                            const canEarn = !isEarned && perk.condition(stats);
+                            
+                            return (
+                                <motion.div
+                                    key={perk.id}
+                                    initial={{ y: 50, opacity: 0 }}
+                                    animate={{ y: 0, opacity: 1 }}
+                                    transition={{ delay: index * 0.1 }}
+                                    className={`relative group ${isEarned ? '' : 'opacity-50'}`}
+                                >
+                                    <div className={`absolute inset-0 translate-y-3 translate-x-3 ${isEarned ? 'bg-yellow-600' : 'bg-zinc-800'} transition-transform group-hover:translate-x-4 group-hover:translate-y-4`}></div>
+                                    <div className={`relative bg-zinc-900 border-4 ${isEarned ? 'border-yellow-500' : 'border-zinc-700'} p-6 transition-transform duration-100`}>
+                                        <div className="flex items-start gap-4">
+                                            <div className={`w-16 h-16 ${isEarned ? 'bg-yellow-500/20 border-2 border-yellow-500' : 'bg-zinc-800 border-2 border-zinc-700'} flex items-center justify-center rounded-sm flex-shrink-0`}>
+                                                {isEarned ? (
+                                                    <Icon name={perk.icon} size={32} className="text-yellow-500" />
+                                                ) : (
+                                                    <Icon name="Lock" size={24} className="text-zinc-600" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <h3 className={`text-2xl font-black ${isEarned ? 'text-yellow-500' : 'text-zinc-600'} italic uppercase tracking-tighter font-ops`}>
+                                                        {perk.title}
+                                                    </h3>
+                                                    {isEarned && (
+                                                        <div className="bg-yellow-500 text-black font-black text-xs px-2 py-1 uppercase tracking-widest transform -skew-x-12">
+                                                            BEHAALD
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <p className={`text-sm ${isEarned ? 'text-zinc-300' : 'text-zinc-600'} font-bold uppercase tracking-wider`}>
+                                                    {perk.desc}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </motion.div>
+        );
+    };
+
+    // XP HUD (Tactical Bar + Perks)
+    const XPStatus = ({ currentXP, earnedPerks }) => {
+        const info = getLevelInfo(currentXP);
+        return (
+            <div className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-md border-b border-zinc-800 p-2 shadow-xl h-16 box-border">
+                <div className="flex justify-between items-start mb-2 px-1">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <div className="bg-yellow-500 text-black font-black px-2 py-0.5 text-xs transform -skew-x-12 font-ops">LVL {info.level}</div>
+                            <span className="text-yellow-500 font-ops text-sm tracking-widest">{info.title}</span>
+                        </div>
+                        <div className="text-[10px] text-zinc-500 font-mono font-bold">{Math.floor(info.currentXP)} / {info.nextXP} XP</div>
+                    </div>
+                    {/* PERKS ROW */}
+                    <div className="flex gap-1">
+                        {earnedPerks.map(pId => {
+                            const perk = PERKS.find(p => p.id === pId);
+                            if(!perk) return null;
+                            return (
+                                <div key={pId} className="w-8 h-8 bg-zinc-800 border border-yellow-500/50 flex items-center justify-center rounded-sm text-yellow-500" title={perk.title}>
+                                    <Icon name={perk.icon} size={16} />
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+                {/* Tactical Progress Bar */}
+                <div className="h-1.5 bg-zinc-900 w-full rounded-sm overflow-hidden relative border border-zinc-700">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${info.progress}%` }} transition={{ type: "spring", stiffness: 50 }} className="h-full bg-yellow-500 relative">
+                        <div className="absolute right-0 top-0 bottom-0 w-4 bg-white/50 animate-pulse"></div>
+                    </motion.div>
+                </div>
+            </div>
+        );
+    };
+
+    // Logbook View - FIXED HEADER
+    const LogbookView = ({ photos, onBack }) => {
+        return (
+            <motion.div 
+                initial={{ x: '100%' }} 
+                animate={{ x: 0 }} 
+                exit={{ x: '100%' }} 
+                className="fixed inset-0 bg-zinc-950 font-condensed z-50 overflow-y-auto no-scrollbar"
+            >
+                <GlobalEffects />
+                
+                {/* Sticky Header with high Z-index */}
+                <div className="sticky top-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-md z-50 px-4 py-4 border-b border-zinc-800 flex items-center justify-between shadow-lg">
+                     <h2 className="text-4xl font-black text-white italic uppercase font-ops leading-none pt-2">DOSSIER</h2>
+                     <button 
+                        onClick={onBack} 
+                        className="bg-zinc-800 p-2 rounded-full text-white border border-zinc-700 hover:bg-zinc-700 active:scale-95 transition-transform flex-shrink-0"
+                     >
+                        <Icon name="X" size={28}/>
+                     </button>
+                </div>
+
+                {photos.length === 0 ? (
+                    <div className="text-center mt-20 opacity-50 px-6">
+                        <Icon name="FileSearch" size={64} className="mx-auto mb-4 text-zinc-600" />
+                        <p className="text-zinc-500 font-bold uppercase">Geen bewijsmateriaal gevonden</p>
+                        <p className="text-xs text-zinc-700 mt-2">Voltooi missies en maak foto's om je dossier te vullen</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-6 px-4 pt-6 pb-20">
+                        {photos.slice().reverse().map((photo, i) => (
+                            <div key={i} className="bg-zinc-900 border-2 border-zinc-700 p-2 transform rotate-1 hover:rotate-0 transition-transform shadow-lg relative group">
+                                <div className="absolute -top-3 -right-3 bg-red-600 text-white text-[10px] font-bold px-2 py-1 transform rotate-12 z-10 font-ops">BEWIJS #{photos.length - i}</div>
+                                <div className="aspect-video bg-black overflow-hidden border border-zinc-800 mb-2 relative">
+                                    <img src={photo.data} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
+                                    <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.2)_50%)] bg-[length:100%_4px] pointer-events-none"></div>
+                                </div>
+                                <div className="flex justify-between items-end">
+                                    <div>
+                                        <div className="text-yellow-500 font-black text-sm uppercase leading-none mb-1">{photo.missionTitle}</div>
+                                        <div className="text-zinc-500 text-[10px] font-mono">{photo.date}</div>
+                                    </div>
+                                    <Icon name="Stamp" size={20} className="text-emerald-500 opacity-50" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </motion.div>
+        )
+    };
+
+    const SpecialCrate = ({ level, onOpen }) => {
+        const isUnlocked = level >= 3;
+        // Calculate padding bottom to account for fixed button height + safe area
+        const buttonHeight = 120; // Approximate button height
+        const safeAreaBottom = 'env(safe-area-inset-bottom, 0px)';
+        return (
+            <div className="mt-8 px-4" style={{ paddingBottom: `calc(${buttonHeight}px + ${safeAreaBottom} + 1rem)` }}>
+                 <button onClick={isUnlocked ? onOpen : null} className={`w-full relative overflow-hidden transition-transform active:scale-95 group ${isUnlocked ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}>
+                    <div className={`h-32 w-full border-4 clip-brutal flex items-center justify-center relative ${isUnlocked ? 'bg-zinc-900 border-purple-500' : 'bg-zinc-900 border-zinc-700'}`}>
+                        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-30"></div>
+                        <div className="absolute bottom-0 left-0 right-0 h-3 bg-[repeating-linear-gradient(45deg,#000,#000_10px,#222_10px,#222_20px)]"></div>
+                        <div className="z-10 text-center">
+                            {isUnlocked ? (
+                                <><Icon name="Box" size={40} className="text-purple-500 mx-auto mb-2 animate-bounce" /><h3 className="text-purple-400 font-ops text-2xl tracking-wider">CLASSIFIED CARGO</h3><p className="text-[10px] text-purple-600 font-bold uppercase tracking-[0.3em] bg-black/50 px-2 mt-1">TAP TO DECRYPT</p></>
+                            ) : (
+                                <><Icon name="Lock" size={40} className="text-zinc-600 mx-auto mb-2" /><h3 className="text-zinc-500 font-ops text-xl tracking-wider">LOCKED</h3><p className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest bg-black/50 px-2 mt-1">REQUIRES LEVEL 3</p></>
+                            )}
+                        </div>
+                    </div>
+                </button>
+            </div>
+        );
+    };
+
+    // Operation Mode Selector
+    const OperationModeSelector = ({ onSelectMode, onBack, currentXP, earnedPerks, onViewControlPanel, onViewLogbook, onViewPerks }) => {
+        const playClickSound = () => {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (e) {
+                // Silently fail if audio context is not available
+            }
+        };
+
+        const startBGM = () => {
+            const bgMusic = document.getElementById('bgMusic');
+            if (bgMusic) {
+                bgMusic.play().catch((err) => {
+                    console.error('Failed to start BGM:', err);
+                });
+            }
+        };
+
+        const handleSelectMode = (mode) => {
+            playClickSound();
+            startBGM();
+            onSelectMode(mode);
+        };
+
+        return (
+            <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                className="min-h-screen bg-zinc-950 font-condensed relative overflow-hidden"
+                style={{
+                    backgroundImage: 'url(base-camp-bg.png)',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat'
+                }}
+            >
+                {/* Glow overlay - above scanlines */}
+                <div 
+                    className="absolute inset-0 pointer-events-none z-10"
+                    style={{
+                        backgroundImage: 'url(base-camp-bg-glow.png)',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                        mixBlendMode: 'plus-lighter',
+                        animation: 'flicker 2s ease-in-out infinite'
+                    }}
+                />
+                {/* Scanlines between bg and bg-glow */}
+                <GlobalEffects />
+                {/* Dark overlay for readability - reduced opacity */}
+                <div className="absolute inset-0 bg-zinc-950/30 z-20"></div>
+                
+                <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
+                
+                {/* Header with title/logo */}
+                <header className="px-4 mb-8 relative z-30 flex justify-between items-start pt-24">
+                    <div>
+                        <div className="bg-yellow-400 text-black font-black text-xs px-2 py-1 inline-block -skew-x-12 mb-1 animate-pulse">HET HOOFDKWARTIER</div>
+                        <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-[0.85] font-ops">OPERATIE:<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">BUITEN DE LIJNTJES</span></h1>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={onViewControlPanel} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                           <Icon name="User" size={24} className="text-yellow-400 mb-1" />
+                           <span className="font-black text-white text-[10px] uppercase">WIE BEN IK?</span>
+                        </button>
+                        <button onClick={onViewLogbook} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                           <Icon name="FolderOpen" size={24} className="text-yellow-400 mb-1" />
+                           <span className="font-black text-white text-[10px] uppercase">MIJN FOTO-BOEK</span>
+                        </button>
+                        <button onClick={onViewPerks} className="bg-zinc-800 border-2 border-zinc-700 p-2 transform skew-x-[-10deg] shadow-[4px_4px_0px_0px_#eab308] active:scale-95 transition-transform flex flex-col items-center">
+                           <Icon name="Award" size={24} className="text-yellow-400 mb-1" />
+                           <span className="font-black text-white text-[10px] uppercase">STICKERS</span>
+                        </button>
+                    </div>
+                </header>
+
+                <div className="relative z-30 px-4 pb-24 flex flex-col gap-6" style={{ minHeight: 'calc(100vh - 12rem)', justifyContent: 'flex-end' }}>
+                    {/* Operatie Binnen Button */}
+                    <motion.button
+                        onClick={() => handleSelectMode('indoor')}
+                        initial={{ x: -100, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.1, type: "spring", stiffness: 120, damping: 12 }}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="w-full relative group text-left"
+                    >
+                        <div className="bg-blue-900 h-28 w-full border-l-8 border-blue-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg">
+                            <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
+                            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                            <div className="z-10 flex-1 relative">
+                                <h3 className="text-3xl font-black text-white italic uppercase tracking-tighter drop-shadow-md transform -skew-x-6 font-ops">MISSIE BINNEN</h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Icon name="AlertTriangle" size={14} className="text-blue-400 animate-bounce" />
+                                    <p className="text-blue-400 font-bold text-xs tracking-widest uppercase bg-black/40 px-2 py-1">GEHEIME KAMERS</p>
+                                </div>
+                            </div>
+                            <div className="z-10 bg-black/40 p-3 rounded-full border-2 border-white/10 group-hover:bg-white group-hover:text-black transition-all duration-300">
+                                <Icon name="Home" size={28} />
+                            </div>
+                        </div>
+                    </motion.button>
+
+                    {/* Operatie Buiten Button */}
+                    <motion.button
+                        onClick={() => handleSelectMode('outdoor')}
+                        initial={{ x: 100, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.2, type: "spring", stiffness: 120, damping: 12 }}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="w-full relative group text-left"
+                    >
+                        <div className="bg-emerald-900 h-28 w-full border-l-8 border-emerald-500 relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg">
+                            <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
+                            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                            <div className="z-10 flex-1 relative">
+                                <h3 className="text-3xl font-black text-white italic uppercase tracking-tighter drop-shadow-md transform -skew-x-6 font-ops">MISSIE BUITEN</h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Icon name="AlertTriangle" size={14} className="text-emerald-400 animate-bounce" />
+                                    <p className="text-emerald-400 font-bold text-xs tracking-widest uppercase bg-black/40 px-2 py-1">OP ONTDEKKING</p>
+                                </div>
+                            </div>
+                            <div className="z-10 bg-black/40 p-3 rounded-full border-2 border-white/10 group-hover:bg-white group-hover:text-black transition-all duration-300">
+                                <Icon name="Trees" size={28} />
+                            </div>
+                        </div>
+                    </motion.button>
+                </div>
+            </motion.div>
+        );
+    };
+
+    const AdventureMap = ({ onSelectZone, unlockedCount, currentXP, earnedPerks, onViewLogbook, onViewControlPanel, operationMode, onViewModeSelect }) => {
+      const levelInfo = getLevelInfo(currentXP);
+      const zones = operationMode === 'indoor' ? INDOOR_ZONES : ZONES;
+      const titleText = operationMode === 'indoor' ? 'MISSIE BINNEN' : 'MISSIE BUITEN';
+      const gradientColors = operationMode === 'indoor' ? 'from-blue-400 to-purple-500' : 'from-yellow-400 to-orange-500';
+      
+      return (
+        <motion.div className="min-h-screen bg-zinc-950 font-condensed select-none overflow-hidden relative pt-24" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+          <GlobalEffects />
+          <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
+          
+          <header className="px-4 mb-8 relative z-10 flex justify-between items-start pt-4">
+            <div>
+                <div className="bg-yellow-400 text-black font-black text-xs px-2 py-1 inline-block -skew-x-12 mb-1 animate-pulse">VERBINDING MET DE BASIS... OK!</div>
+                <div className="flex flex-col">
+                  <motion.span 
+                    initial={{ x: -50, opacity: 0 }}
+                    animate={{ x: 0, opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="text-yellow-400 font-bold tracking-[0.2em] text-xl mb-1"
+                  >
+                    OPERATIE:
+                  </motion.span>
+                  <motion.h1 
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3, type: "spring", stiffness: 300, damping: 15 }}
+                    className="text-5xl font-black text-white italic tracking-tighter uppercase leading-[0.85] font-ops"
+                  >
+                    <span className={`text-transparent bg-clip-text bg-gradient-to-r ${gradientColors}`}>BUITEN DE LIJNTJES</span>
+                  </motion.h1>
+                </div>
+            </div>
+          </header>
+
+          <div className="relative w-full px-4 flex flex-col gap-6 z-10">
+            {zones.map((zone, index) => {
+              const isLocked = levelInfo.level < zone.minLevel;
+              return (
+              <motion.button key={zone.id} onClick={() => !isLocked && onSelectZone(zone)} initial={{ x: index % 2 === 0 ? -100 : 100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: index * 0.1, type: "spring", stiffness: 120, damping: 12 }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} className={`w-full relative group text-left ${isLocked ? 'grayscale opacity-75' : ''}`} disabled={isLocked}>
+                <div className={`
+                  ${zone.color} h-28 w-full border-l-8 ${isLocked ? 'border-zinc-600' : zone.border} relative overflow-hidden flex items-center justify-between px-6 clip-brutal transition-all duration-200 shadow-lg
+                `}>
+                    {isLocked && <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center gap-2"><Icon name="Lock" className="text-zinc-400" size={32} /><span className="font-ops text-zinc-400 text-xl tracking-widest">LVL {zone.minLevel}</span></div>}
+                    <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-black/50 to-transparent"></div>
+                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                    <div className="z-10 flex-1 relative">
+                        <h3 className="text-3xl font-black text-white italic uppercase tracking-tighter drop-shadow-md transform -skew-x-6 font-ops">{zone.title}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                            {!isLocked && <Icon name="AlertTriangle" size={14} className={`${zone.accent} animate-bounce`} />}
+                            <p className={`${zone.accent} font-bold text-xs tracking-widest uppercase bg-black/40 px-2 py-1`}>{zone.subtitle}</p>
+                        </div>
+                    </div>
+                    <div className="z-10 bg-black/40 p-3 rounded-full border-2 border-white/10 group-hover:bg-white group-hover:text-black transition-all duration-300"><Icon name={zone.iconName} size={28} /></div>
+                </div>
+              </motion.button>
+            )})}
+          </div>
+          <SpecialCrate level={levelInfo.level} onOpen={() => alert("SECRET UNLOCKED: NIGHT VISION BUILDER (Coming Soon in Update 2.0)")} />
+          <div className="fixed bottom-4 left-4 text-zinc-800 font-black text-8xl opacity-30 rotate-[-10deg] pointer-events-none select-none font-ops">GO!</div>
+          
+          {/* Fixed Back to Basecamp Button */}
+          <motion.button
+            onClick={onViewModeSelect}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            whileTap={{ scale: 0.98 }}
+            className="fixed bottom-0 left-0 right-0 w-full group z-[9999]"
+          >
+            {/* De achtergrond die écht tot de bodem loopt */}
+            <div className="absolute inset-0 bg-yellow-400"></div>
+            
+            {/* De visuele content met Safe Area padding voor mobiel */}
+            <div 
+              className="relative bg-yellow-400 hover:bg-yellow-300 border-t-4 border-black px-6 pt-6 flex items-center justify-center gap-4 active:bg-yellow-500 transition-colors"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+            >
+              <Icon name="Home" size={32} className="text-black" />
+              <div className="text-left">
+                <span className="block text-sm font-black text-black uppercase tracking-widest">TERUG NAAR</span>
+                <span className="block text-3xl font-black uppercase italic tracking-tighter text-black leading-none font-ops">DE BASIS</span>
+              </div>
+            </div>
+          </motion.button>
+        </motion.div>
+      );
+    };
+
+    const ZoneView = ({ zone, onBack, onSelectAdventure, completedIds, currentXP, earnedPerks }) => {
+      // Extract zone name from title (remove prefixes like "DANGER ZONE:" or "BASECAMP:")
+      const getZoneDisplayName = (title) => {
+        return title
+          .replace(/^DANGER ZONE:\s*/i, '')
+          .replace(/^BASECAMP:\s*/i, '')
+          .replace(/^GEHEIM LAB:\s*/i, '')
+          .replace(/^DE SCHADUW GANG/i, 'SCHADUW GANG')
+          .replace(/^HET LUCHTRUIM:\s*/i, 'LUCHTRUIM')
+          .trim();
+      };
+      
+      const zoneDisplayName = getZoneDisplayName(zone.title);
+      
+      return (
+        <motion.div className={`min-h-screen bg-zinc-950 relative overflow-x-hidden font-condensed`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+          <GlobalEffects />
+          <XPStatus currentXP={currentXP} earnedPerks={earnedPerks} />
+          <div className={`absolute inset-0 ${zone.color} opacity-20 pointer-events-none`}></div>
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.5)_2px,transparent_2px)] bg-[length:100%_4px] pointer-events-none opacity-20"></div>
+          
+          {/* Sticky header positioned right below XP bar - exactly at 64px (h-16) */}
+          <div className="relative z-40 px-4 py-3 flex items-center justify-between bg-zinc-900 border-b-4 border-zinc-800 shadow-xl sticky top-16">
+            <button 
+                onClick={onBack} 
+                className="flex items-center gap-2 text-white font-bold uppercase tracking-wider hover:text-yellow-400 transition-colors p-2 bg-black/20 rounded"
+            >
+                <Icon name="ArrowLeft" size={24} /> {zoneDisplayName}
+            </button>
+            <Icon name={zone.iconName} size={32} className={`${zone.accent} animate-pulse`} />
+          </div>
+
+          <div className="p-6 relative z-10 pb-24 pt-6">
+            <div className="mb-10 border-l-8 border-white pl-6 py-2">
+                <h2 className="text-5xl font-black text-white uppercase italic tracking-tighter leading-none mb-2 font-ops">{zone.title}</h2>
+                <p className="text-zinc-400 font-bold max-w-sm uppercase text-sm leading-relaxed tracking-wider">// MISSION BRIEFING: {zone.description}</p>
+            </div>
+            <div className="grid gap-8">
+              {zone.adventures.map((adv, idx) => {
+                const isDone = completedIds.includes(adv.id);
+                return (
+                  <motion.div key={adv.id} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: idx * 0.15 }} onClick={() => onSelectAdventure(adv)} className="relative cursor-pointer group">
+                    <div className={`absolute inset-0 translate-y-3 translate-x-3 ${isDone ? 'bg-emerald-900' : 'bg-yellow-600'} transition-transform group-hover:translate-x-4 group-hover:translate-y-4`}></div>
+                    <div className={`relative bg-zinc-900 border-4 ${isDone ? 'border-emerald-500' : 'border-zinc-700'} p-6 active:translate-y-1 active:translate-x-1 transition-transform duration-100`}>
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="flex gap-2">
+                                <div className={`font-black text-xs px-2 py-1 uppercase tracking-widest transform -skew-x-12 ${isDone ? 'bg-emerald-500 text-black' : 'bg-white text-black'}`}>{adv.difficulty}</div>
+                                <div className="bg-zinc-800 text-yellow-500 font-bold text-xs px-2 py-1 uppercase tracking-widest border border-yellow-500/30">+{adv.xp} XP</div>
+                            </div>
+                            {isDone ? <Icon name="CheckCircle" size={32} className="text-emerald-500" fill="currentColor" stroke="#000" /> : <div className="text-zinc-600 group-hover:text-yellow-400 animate-pulse"><Icon name="Zap" size={28} fill="currentColor" /></div>}
+                        </div>
+                        <h3 className="text-3xl font-black text-white italic uppercase mb-2 leading-none font-ops">{adv.title}</h3>
+                        <p className="text-zinc-400 text-sm font-bold uppercase">{adv.intro}</p>
+                        <div className="mt-6 pt-4 border-t border-zinc-800 flex justify-end"><span className={`font-black uppercase text-sm flex items-center gap-2 ${isDone ? 'text-emerald-500' : 'text-yellow-400'}`}>{isDone ? 'MISSION COMPLETE' : 'START MISSION'} <Icon name="ArrowLeft" size={16} className="rotate-180" /></span></div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
+      );
+    };
+
+    const CameraHUD = ({ onCapture, onClose }) => {
+        const videoRef = useRef(null);
+        const [flash, setFlash] = useState(false);
+        useEffect(() => {
+            let stream = null;
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(s => {
+                stream = s;
+                if (videoRef.current) videoRef.current.srcObject = stream;
+            }).catch(console.error);
+            return () => { if (stream) stream.getTracks().forEach(track => track.stop()); };
+        }, []);
+
+        const takePicture = () => {
+            setFlash(true);
+            if(videoRef.current) {
+                const canvas = document.createElement('canvas');
+                // Resize for storage efficiency
+                const scale = 320 / videoRef.current.videoWidth; 
+                canvas.width = 320;
+                canvas.height = videoRef.current.videoHeight * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+                const data = canvas.toDataURL('image/jpeg', 0.7);
+                setTimeout(() => onCapture(data), 100);
+            } else {
+                 setTimeout(() => onCapture(null), 100);
+            }
+        };
+
+        return (
+            <div className="fixed inset-0 z-[70] bg-black flex flex-col font-mono">
+                {flash && <div className="absolute inset-0 bg-white z-[80] animate-[fadeOut_0.2s_ease-out]"></div>}
+                <div className="h-16 bg-black/80 flex justify-between items-center px-4 border-b border-zinc-800 z-10 absolute top-0 w-full">
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600 rounded-full animate-ping"></div><span className="text-red-500 font-bold text-xs tracking-widest">LIVE FEED</span></div>
+                    <button onClick={onClose} className="text-white p-2 z-20"><Icon name="X" size={24} /></button>
+                </div>
+                <div className="flex-1 relative overflow-hidden bg-black">
+                     <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover"></video>
+                    <div className="absolute inset-0 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-64 h-64 border-2 border-white/30 rounded-lg relative">
+                                <Icon name="Crosshair" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white/50" size={32} />
+                                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-yellow-400 -mt-1 -ml-1"></div>
+                                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-yellow-400 -mt-1 -mr-1"></div>
+                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-yellow-400 -mb-1 -ml-1"></div>
+                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-yellow-400 -mb-1 -mr-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="h-32 bg-black/90 flex items-center justify-center relative z-10 border-t border-zinc-800">
+                    <button onClick={takePicture} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center relative group active:scale-95 transition-transform"><div className="w-16 h-16 bg-white rounded-full group-hover:bg-red-500 transition-colors"></div></button>
+                </div>
+            </div>
+        );
+    };
+
+    const AdventureDetails = ({ adventure, onClose, onComplete, isCompleted, onBackToBaseCamp }) => {
+      const [showCamera, setShowCamera] = useState(false);
+      const handleStartMission = () => setShowCamera(true);
+      const handleCapture = (photoData) => { setShowCamera(false); onComplete(adventure.id, adventure.xp, photoData, adventure.title); };
+      return (
+        <>
+        <AnimatePresence>
+            {showCamera && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60]"><CameraHUD onCapture={handleCapture} onClose={() => setShowCamera(false)} /></motion.div>}
+        </AnimatePresence>
+        <motion.div className="fixed inset-0 z-50 bg-black/95 overflow-y-auto flex flex-col font-condensed no-scrollbar" initial={{scale:0.9, opacity:0}} animate={{scale:1, opacity:1}} exit={{scale:0.9, opacity:0}}>
+          <GlobalEffects />
+          <div className="flex justify-between items-center p-4 bg-zinc-900 border-b border-zinc-800 sticky top-0 z-40">
+             <div className="flex items-center gap-3">
+                {onBackToBaseCamp && (
+                    <button 
+                        onClick={onBackToBaseCamp} 
+                        className="flex items-center gap-2 text-white font-bold uppercase tracking-wider hover:text-yellow-400 transition-colors p-2 bg-black/20 rounded text-sm"
+                    >
+                        <Icon name="ArrowLeft" size={20} /> NAAR HUIS
+                    </button>
+                )}
+                <h2 className="text-white font-black uppercase tracking-wider text-sm flex items-center gap-2 animate-pulse"><Icon name="AlertTriangle" size={16} className="text-red-500" /> Classified</h2>
+             </div>
+             <button onClick={onClose} className="bg-zinc-800 text-white p-2 hover:bg-red-600 transition-colors rounded"><Icon name="X" size={24} /></button>
+          </div>
+          <div className="flex-1 p-6 max-w-2xl mx-auto w-full pb-40">
+            <div className="flex justify-between items-start">
+                <h1 className="text-5xl font-black text-white italic uppercase tracking-tighter mb-4 leading-[0.85] font-ops">{adventure.title}</h1>
+                <div className="bg-yellow-500 text-black font-black text-lg px-2 py-1 transform skew-x-[-10deg]">+{adventure.xp} XP</div>
+            </div>
+            <div className="bg-yellow-400 text-black p-6 font-black text-xl uppercase italic transform -skew-x-3 mb-10 border-l-[12px] border-black shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)]"><span className="text-4xl block mb-2">⚠</span>"{adventure.intro}"</div>
+            <div className="mb-10 bg-zinc-900/50 p-6 border border-zinc-800 rounded-lg">
+               <h3 className="text-green-500 font-black uppercase tracking-widest text-sm mb-4 flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> TACTICAL GEAR CHECK</h3>
+               <div className="grid grid-cols-1 gap-3">{adventure.supplies.map((item, i) => (<div key={i} className="bg-black border border-zinc-700 p-4 flex items-center gap-4 text-white font-bold uppercase text-sm tracking-wide shadow-sm"><div className="w-5 h-5 border-2 border-yellow-500 flex items-center justify-center"><div className="w-2 h-2 bg-yellow-500"></div></div>{item}</div>))}</div>
+            </div>
+            <div className="mb-12">
+                <h3 className="text-blue-500 font-black uppercase tracking-widest text-sm mb-6 flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div> MISSION PROTOCOL</h3>
+                <div className="space-y-8">{adventure.steps.map((step, i) => (<div key={i} className="flex gap-6 group relative">{i !== adventure.steps.length - 1 && <div className="absolute left-[22px] top-12 bottom-[-32px] w-1 bg-zinc-800 group-hover:bg-yellow-500/30 transition-colors"></div>}<div className="flex-shrink-0 w-12 h-12 bg-zinc-900 border-2 border-zinc-700 text-white flex items-center justify-center font-black text-xl rounded-lg group-hover:border-yellow-400 group-hover:text-yellow-400 transition-all z-10 shadow-lg">{i+1}</div><p className="text-xl text-zinc-300 font-bold uppercase leading-tight pt-1 italic">{step}</p></div>))}</div>
+            </div>
+            {isCompleted && (
+                <div className="border-4 border-emerald-500 bg-emerald-900/30 p-8 text-center relative overflow-hidden">
+                    <div className="absolute top-2 right-2 border-2 border-emerald-500/50 rounded p-1"><span className="text-[10px] text-emerald-500 font-mono uppercase">VERIFIED</span></div>
+                    <Icon name="Star" size={80} className="text-emerald-400 mx-auto mb-4 animate-[spin_10s_linear_infinite]" fill="currentColor" />
+                    <h3 className="text-5xl font-black text-white uppercase italic mb-2 tracking-tighter font-ops">EPISCH!</h3>
+                    <p className="text-emerald-400 font-bold uppercase tracking-widest">+{adventure.xp} XP VERDIEND</p>
+                </div>
+            )}
+          </div>
+          {!isCompleted && (
+            <div className="fixed bottom-0 left-0 right-0 z-50">
+                <button onClick={handleStartMission} className="w-full group relative overflow-hidden">
+                    <div className="absolute inset-0 bg-red-600 translate-y-2"></div>
+                    <div className="relative bg-yellow-400 hover:bg-yellow-300 border-t-4 border-black p-6 flex items-center justify-center gap-4 active:bg-yellow-500 transition-colors pb-8">
+                        <Icon name="Camera" className="text-black animate-pulse" size={40} />
+                        <div className="text-left"><span className="block text-sm font-black text-black uppercase tracking-widest">BEWIJS NODIG</span><span className="block text-3xl font-black uppercase italic tracking-tighter text-black leading-none font-ops">ACTIVEER CAMERA</span></div>
+                    </div>
+                </button>
+            </div>
+          )}
+        </motion.div>
+        </>
+      );
+    };
+
+    const LevelUpScreen = ({ newLevel, onClose }) => (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center backdrop-blur-sm" onClick={onClose}>
+            <motion.div initial={{ scale: 0.5, opacity: 0, rotate: -10 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} className="text-center p-8 border-[10px] border-yellow-500 bg-black relative overflow-hidden transform max-w-sm w-full shadow-[0_0_50px_rgba(234,179,8,0.5)]">
+                <div className="absolute inset-0 bg-yellow-500/10 animate-pulse"></div>
+                <h2 className="text-6xl font-black text-yellow-500 font-ops italic leading-none mb-4">LEVEL<br/>UP!</h2>
+                <div className="text-5xl font-bold text-white mb-6 font-ops">{LEVELS[newLevel].name}</div>
+                <div className="bg-yellow-500 text-black font-black text-xl px-8 py-4 inline-block animate-bounce clip-brutal">TAP TO CONTINUE</div>
+            </motion.div>
+        </div>
+    );
+
+    const PerkToast = ({ perk, onClose }) => (
+        <div className="fixed inset-0 z-[110] bg-black/90 flex items-center justify-center backdrop-blur-sm" onClick={onClose}>
+            <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center p-8 bg-zinc-900 border-4 border-yellow-500 relative max-w-xs w-full shadow-[0_0_50px_rgba(234,179,8,0.5)]">
+                <h2 className="text-3xl font-black text-yellow-500 font-ops italic mb-4">PERK UNLOCKED!</h2>
+                <div className="w-20 h-20 bg-zinc-800 border-2 border-yellow-500/50 mx-auto rounded flex items-center justify-center mb-4">
+                    <Icon name={perk.icon} size={40} className="text-yellow-500" />
+                </div>
+                <div className="text-2xl font-bold text-white mb-1">{perk.title}</div>
+                <div className="text-zinc-400 text-sm mb-6">{perk.desc}</div>
+                <div className="bg-yellow-500 text-black font-bold text-sm px-6 py-2 inline-block">AWESOME</div>
+            </motion.div>
+        </div>
+    );
+
+    const MobileApp = ({ completedAdventures, xp, photos, perks, codename, onComplete, onUpdateCodename, operationMode, onUpdateOperationMode, onResetProgress, initialView = 'mode-select' }) => {
+        const [view, setView] = useState(initialView);
+        const [activeZone, setActiveZone] = useState(null);
+        const [activeAdventure, setActiveAdventure] = useState(null);
+        const [showBlast, setShowBlast] = useState(false);
+        const [showLevelUp, setShowLevelUp] = useState(false);
+        const [showPerk, setShowPerk] = useState(false);
+        const [blastXP, setBlastXP] = useState(0);
+        
+        // Sync view with initialView prop changes (only when prop changes, not on every render)
+        useEffect(() => {
+            if (initialView && initialView !== view) {
+                console.log('Syncing view from', view, 'to', initialView);
+                setView(initialView);
+            }
+        }, [initialView]);
+        
+        const handleSwitchMode = () => {
+            const newMode = operationMode === 'outdoor' ? 'indoor' : 'outdoor';
+            onUpdateOperationMode(newMode);
+        };
+
+        const handleViewModeSelect = () => {
+            setView('mode-select');
+        };
+
+        const handleComplete = (id, earnedXP, photoData, missionTitle) => {
+            const oldLevel = getLevelInfo(xp).level;
+            const newXP = xp + earnedXP;
+            const newLevel = getLevelInfo(newXP).level;
+            
+            // Check Perks
+            const tempStats = { completed: [...completedAdventures, id], xp: newXP };
+            const newPerks = PERKS.filter(p => !perks.includes(p.id) && p.condition(tempStats));
+
+            setBlastXP(earnedXP);
+            onComplete(id, earnedXP, photoData, missionTitle, newPerks.map(p => p.id));
+            
+            setShowBlast(true);
+            setTimeout(() => {
+                setShowBlast(false);
+                if (newLevel > oldLevel) {
+                    setShowLevelUp(newLevel);
+                } else if (newPerks.length > 0) {
+                    setShowPerk(newPerks[0]);
+                }
+            }, 2500);
+        };
+
+        const handleCloseLevelUp = () => {
+             setShowLevelUp(false);
+             // If there was a perk pending, show it now
+             const tempStats = { completed: completedAdventures, xp }; // Current state is already updated
+             // Logic simplified for demo: just close
+        };
+
+        // Debug: log current view
+        console.log('MobileApp render - view:', view, 'initialView:', initialView);
+        
+        return (
+            <div className="min-h-screen relative bg-zinc-950">
+                <AnimatePresence>
+                    {showBlast && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center overflow-hidden">
+                            <motion.div initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={{ duration: 0.5 }} className="absolute inset-0 bg-white" />
+                            <div className="absolute inset-0 bg-yellow-400 mix-blend-multiply animate-pulse"></div>
+                            <motion.div initial={{ scale: 0, rotate: -15 }} animate={{ scale: [0, 1.5, 1], rotate: 0 }} className="relative z-10">
+                                <div className="bg-white border-[6px] border-black p-12 transform -rotate-3 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
+                                    <h1 className="text-7xl font-black text-black italic uppercase leading-none mb-4 font-ops">HOLY<br/>MOLY!</h1>
+                                    <div className="bg-black text-white font-black text-2xl px-4 py-2 inline-block">+{blastXP} XP</div>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                    {showLevelUp && <LevelUpScreen newLevel={showLevelUp} onClose={handleCloseLevelUp} />}
+                    {showPerk && <PerkToast perk={showPerk} onClose={() => setShowPerk(false)} />}
+                </AnimatePresence>
+                <AnimatePresence mode="wait">
+                    {view === 'mode-select' && <OperationModeSelector key="mode-select" onSelectMode={(mode) => { onUpdateOperationMode(mode); setView('home'); }} onBack={() => setView('home')} currentXP={xp} earnedPerks={perks} onViewControlPanel={() => setView('control')} onViewLogbook={() => setView('logbook')} onViewPerks={() => setView('perks')} />}
+                    {view === 'home' && <AdventureMap key="home" onSelectZone={(z) => {setActiveZone(z); setView('zone');}} unlockedCount={completedAdventures.length} currentXP={xp} earnedPerks={perks} operationMode={operationMode} onViewModeSelect={handleViewModeSelect} />}
+                    {view === 'logbook' && <LogbookView key="logbook" photos={photos} onBack={() => setView('mode-select')} />}
+                    {view === 'control' && <ControlPanel key="control" codename={codename} onUpdateCodename={onUpdateCodename} onBack={() => setView('mode-select')} currentXP={xp} earnedPerks={perks} onResetProgress={onResetProgress} />}
+                    {view === 'perks' && <PerksView key="perks" earnedPerks={perks} currentXP={xp} completedAdventures={completedAdventures} onBack={() => setView('mode-select')} />}
+                    {view === 'zone' && activeZone && <ZoneView key="zone" zone={activeZone} onBack={() => {setView('home'); setActiveZone(null);}} onSelectAdventure={(a) => {setActiveAdventure(a); setView('adventure');}} completedIds={completedAdventures} currentXP={xp} earnedPerks={perks} />}
+                    {view === 'adventure' && activeAdventure && <AdventureDetails key="adventure" adventure={activeAdventure} onClose={() => {setView('zone'); setActiveAdventure(null);}} onBackToBaseCamp={() => {setView('mode-select'); setActiveAdventure(null); setActiveZone(null);}} onComplete={handleComplete} isCompleted={completedAdventures.includes(activeAdventure.id)} />}
+                    {!view && <div className="min-h-screen flex items-center justify-center text-white"><p>Loading...</p></div>}
+                </AnimatePresence>
+            </div>
+        );
+    };
+
+    const Main = () => {
+        const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+        // Check localStorage for saved state
+        const saved = localStorage.getItem('bdl_save_v7');
+        const [state, setState] = useState(() => {
+            try {
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    return { ...parsed, codename: parsed.codename || '', operationMode: parsed.operationMode || 'outdoor' };
+                }
+            } catch (e) {
+                console.error('Error parsing saved state:', e);
+            }
+            return { completed: [], xp: 0, photos: [], perks: [], codename: '', operationMode: 'outdoor' };
+        });
+        const audioRef = useRef(null);
+        const hasStartedAudio = useRef(false);
+        
+        // Base Camp (Operation Mode Selector) is always the first page
+        const initialView = 'mode-select';
+        
+        useEffect(() => {
+            const handleResize = () => setIsMobile(window.innerWidth < 768);
+            window.addEventListener('resize', handleResize);
+            
+            // Setup background music
+            const bgMusic = document.getElementById('bgMusic');
+            if (bgMusic) {
+                audioRef.current = bgMusic;
+                bgMusic.volume = 0.3; // Set volume to 30% for background music
+                
+                // Try to play (will fail silently if autoplay is blocked)
+                bgMusic.play().catch((err) => {
+                    console.log('Autoplay blocked, waiting for user interaction:', err);
+                    // Autoplay blocked - will start on first user interaction
+                });
+            }
+            
+            // Start audio on first user interaction
+            const startAudio = () => {
+                const bgMusic = document.getElementById('bgMusic');
+                if (bgMusic && !hasStartedAudio.current) {
+                    bgMusic.play().then(() => {
+                        console.log('Background music started');
+                        hasStartedAudio.current = true;
+                    }).catch((err) => {
+                        console.error('Failed to play audio:', err);
+                    });
+                }
+            };
+            
+            // Add multiple event listeners to catch any user interaction
+            const events = ['click', 'touchstart', 'keydown'];
+            events.forEach(event => {
+                document.addEventListener(event, startAudio, { once: true });
+            });
+            
+            return () => {
+                window.removeEventListener('resize', handleResize);
+                const events = ['click', 'touchstart', 'keydown'];
+                events.forEach(event => {
+                    document.removeEventListener(event, startAudio);
+                });
+            };
+        }, []);
+        
+        const handleComplete = (id, gainedXP, photoData, missionTitle, newPerks) => {
+            if (!state.completed.includes(id)) {
+                const newPhoto = photoData ? { 
+                    id: Date.now(), 
+                    data: photoData, 
+                    missionTitle: missionTitle, 
+                    date: new Date().toLocaleDateString() 
+                } : null;
+
+                const newState = { 
+                    completed: [...state.completed, id], 
+                    xp: state.xp + gainedXP,
+                    photos: newPhoto ? [...state.photos, newPhoto] : state.photos,
+                    perks: [...state.perks, ...newPerks],
+                    codename: state.codename
+                };
+                setState(newState);
+                localStorage.setItem('bdl_save_v7', JSON.stringify(newState));
+            }
+        };
+
+        const handleUpdateCodename = (newCodename) => {
+            const newState = { ...state, codename: newCodename };
+            setState(newState);
+            localStorage.setItem('bdl_save_v7', JSON.stringify(newState));
+        };
+
+        const handleUpdateOperationMode = (newMode) => {
+            const newState = { ...state, operationMode: newMode };
+            setState(newState);
+            localStorage.setItem('bdl_save_v7', JSON.stringify(newState));
+        };
+
+        const handleResetProgress = () => {
+            const resetState = { completed: [], xp: 0, photos: [], perks: [], codename: '', operationMode: 'outdoor' };
+            setState(resetState);
+            localStorage.setItem('bdl_save_v7', JSON.stringify(resetState));
+            // Optionally reload or navigate to mode selector
+            window.location.reload();
+        };
+
+        // Desktop View Placeholder (Using same styling as before but simplified for this snippet)
+        if (!isMobile) return (
+             <div className="min-h-screen bg-zinc-950 text-white font-condensed flex items-center justify-center p-8">
+                <div className="text-center">
+                    <h1 className="text-4xl font-ops mb-4">FIELD DEVICE REQUIRED</h1>
+                    <p className="text-zinc-500">Open deze link op je mobiel.</p>
+                </div>
+             </div>
+        );
+
+        return <MobileApp completedAdventures={state.completed} xp={state.xp} photos={state.photos} perks={state.perks} codename={state.codename} operationMode={state.operationMode} onComplete={handleComplete} onUpdateCodename={handleUpdateCodename} onUpdateOperationMode={handleUpdateOperationMode} onResetProgress={handleResetProgress} initialView={initialView} />;
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Main />);
+</script>
+</body>
+</html>
+
+
